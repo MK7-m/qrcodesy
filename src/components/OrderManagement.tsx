@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { supabase } from '../lib/supabase';
 import { Database } from '../lib/database.types';
-import { Clock, CheckCircle, XCircle, Truck, ChefHat, Package } from 'lucide-react';
+import { Clock, CheckCircle, XCircle, ChefHat, Package } from 'lucide-react';
 
 type Restaurant = Database['public']['Tables']['restaurants']['Row'];
 type Order = Database['public']['Tables']['orders']['Row'];
@@ -18,7 +18,7 @@ interface OrderManagementProps {
 
 export function OrderManagement({ restaurant }: OrderManagementProps) {
   const [orders, setOrders] = useState<OrderWithItems[]>([]);
-  const [filter, setFilter] = useState<'all' | 'new' | 'in_progress'>('all');
+  const [filter, setFilter] = useState<'all' | 'pending' | 'preparing'>('all');
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -84,8 +84,16 @@ export function OrderManagement({ restaurant }: OrderManagementProps) {
   };
 
   const filteredOrders = orders.filter((order) => {
-    if (filter === 'all') return order.status !== 'completed' && order.status !== 'cancelled';
-    return order.status === filter;
+    if (filter === 'all') {
+      return order.status !== 'completed' && order.status !== 'canceled';
+    }
+    if (filter === 'pending') {
+      return order.status === 'pending' || order.status === 'confirmed';
+    }
+    if (filter === 'preparing') {
+      return order.status === 'preparing';
+    }
+    return false;
   });
 
   if (loading) {
@@ -99,9 +107,24 @@ export function OrderManagement({ restaurant }: OrderManagementProps) {
   return (
     <div className="space-y-6">
       <div className="flex items-center gap-2 overflow-x-auto pb-2">
-        <FilterButton active={filter === 'all'} onClick={() => setFilter('all')} label="النشطة" count={orders.filter((o) => o.status !== 'completed' && o.status !== 'cancelled').length} />
-        <FilterButton active={filter === 'new'} onClick={() => setFilter('new')} label="جديدة" count={orders.filter((o) => o.status === 'new').length} />
-        <FilterButton active={filter === 'in_progress'} onClick={() => setFilter('in_progress')} label="قيد التحضير" count={orders.filter((o) => o.status === 'in_progress').length} />
+        <FilterButton
+          active={filter === 'all'}
+          onClick={() => setFilter('all')}
+          label="النشطة"
+          count={orders.filter((o) => o.status !== 'completed' && o.status !== 'canceled').length}
+        />
+        <FilterButton
+          active={filter === 'pending'}
+          onClick={() => setFilter('pending')}
+          label="جديدة"
+          count={orders.filter((o) => o.status === 'pending' || o.status === 'confirmed').length}
+        />
+        <FilterButton
+          active={filter === 'preparing'}
+          onClick={() => setFilter('preparing')}
+          label="قيد التحضير"
+          count={orders.filter((o) => o.status === 'preparing').length}
+        />
       </div>
 
       {filteredOrders.length === 0 ? (
@@ -136,60 +159,59 @@ function FilterButton({ active, onClick, label, count }: { active: boolean; onCl
 
 function OrderCard({ order, onUpdateStatus }: { order: OrderWithItems; onUpdateStatus: (orderId: string, status: Order['status']) => void }) {
   const getStatusColor = () => {
-    switch (order.status) {
-      case 'new':
-        return 'bg-blue-100 text-blue-700 border-blue-200';
-      case 'in_progress':
-        return 'bg-yellow-100 text-yellow-700 border-yellow-200';
-      case 'ready':
-        return 'bg-green-100 text-green-700 border-green-200';
-      case 'out_for_delivery':
-        return 'bg-purple-100 text-purple-700 border-purple-200';
-      case 'completed':
-        return 'bg-slate-100 text-slate-700 border-slate-200';
-      case 'cancelled':
-        return 'bg-red-100 text-red-700 border-red-200';
-      default:
-        return 'bg-slate-100 text-slate-700 border-slate-200';
-    }
-  };
+  switch (order.status) {
+    case 'pending':
+      return 'bg-blue-100 text-blue-700 border-blue-200';
+    case 'confirmed':
+      return 'bg-indigo-100 text-indigo-700 border-indigo-200';
+    case 'preparing':
+      return 'bg-yellow-100 text-yellow-700 border-yellow-200';
+    case 'ready':
+      return 'bg-green-100 text-green-700 border-green-200';
+    case 'completed':
+      return 'bg-slate-100 text-slate-700 border-slate-200';
+    case 'canceled':
+      return 'bg-red-100 text-red-700 border-red-200';
+    default:
+      return 'bg-slate-100 text-slate-700 border-slate-200';
+  }
+};
 
-  const getStatusLabel = () => {
-    switch (order.status) {
-      case 'new':
-        return 'طلب جديد';
-      case 'in_progress':
-        return 'قيد التحضير';
-      case 'ready':
-        return 'جاهز';
-      case 'out_for_delivery':
-        return 'في الطريق';
-      case 'completed':
-        return 'مكتمل';
-      case 'cancelled':
-        return 'ملغي';
-      default:
-        return order.status;
-    }
-  };
+const getStatusLabel = () => {
+  switch (order.status) {
+    case 'pending':
+      return '??? ????';
+    case 'confirmed':
+      return '?? ???????';
+    case 'preparing':
+      return '??? ???????';
+    case 'ready':
+      return '???? ???????';
+    case 'completed':
+      return '?????';
+    case 'canceled':
+      return '????';
+    default:
+      return order.status;
+  }
+};
 
-  const getStatusIcon = () => {
-    switch (order.status) {
-      case 'new':
-        return <Clock className="w-4 h-4" />;
-      case 'in_progress':
-        return <ChefHat className="w-4 h-4" />;
-      case 'ready':
-      case 'completed':
-        return <CheckCircle className="w-4 h-4" />;
-      case 'out_for_delivery':
-        return <Truck className="w-4 h-4" />;
-      case 'cancelled':
-        return <XCircle className="w-4 h-4" />;
-      default:
-        return <Clock className="w-4 h-4" />;
-    }
-  };
+const getStatusIcon = () => {
+  switch (order.status) {
+    case 'pending':
+      return <Clock className="w-4 h-4" />;
+    case 'confirmed':
+    case 'preparing':
+      return <ChefHat className="w-4 h-4" />;
+    case 'ready':
+    case 'completed':
+      return <CheckCircle className="w-4 h-4" />;
+    case 'canceled':
+      return <XCircle className="w-4 h-4" />;
+    default:
+      return <Clock className="w-4 h-4" />;
+  }
+};
 
   const getOrderTypeLabel = () => {
     if (order.order_type === 'dine_in') return 'طلب من الطاولة';
@@ -262,44 +284,47 @@ function OrderCard({ order, onUpdateStatus }: { order: OrderWithItems; onUpdateS
           <span className="font-semibold text-slate-900">المجموع</span>
           <span className="text-xl font-bold text-orange-600">{order.total.toLocaleString()} ل.س</span>
         </div>
-
         <div className="flex gap-2">
-          {order.status === 'new' && (
+          {(order.status === 'pending' || order.status === 'confirmed') && (
             <>
               <button
-                onClick={() => onUpdateStatus(order.id, 'in_progress')}
+                onClick={() => onUpdateStatus(order.id, 'preparing')}
                 className="flex-1 px-4 py-2 bg-orange-500 hover:bg-orange-600 text-white font-medium rounded-lg transition-colors"
               >
-                بدء التحضير
+                ??? ???????
               </button>
               <button
-                onClick={() => onUpdateStatus(order.id, 'cancelled')}
+                onClick={() => onUpdateStatus(order.id, 'canceled')}
                 className="px-4 py-2 bg-red-50 hover:bg-red-100 text-red-600 font-medium rounded-lg transition-colors"
               >
-                إلغاء
+                ????? ?????
               </button>
             </>
           )}
 
-          {order.status === 'in_progress' && (
+          {order.status === 'preparing' && (
             <button
-              onClick={() => onUpdateStatus(order.id, order.order_type === 'delivery' ? 'out_for_delivery' : 'ready')}
+              onClick={() => onUpdateStatus(order.id, 'ready')}
               className="flex-1 px-4 py-2 bg-green-500 hover:bg-green-600 text-white font-medium rounded-lg transition-colors"
             >
-              {order.order_type === 'delivery' ? 'جاهز للتوصيل' : 'جاهز'}
+              ????? ????
             </button>
           )}
 
-          {(order.status === 'ready' || order.status === 'out_for_delivery') && (
+          {order.status === 'ready' && (
             <button
               onClick={() => onUpdateStatus(order.id, 'completed')}
               className="flex-1 px-4 py-2 bg-slate-500 hover:bg-slate-600 text-white font-medium rounded-lg transition-colors"
             >
-              تم التسليم
+              ?? ???????
             </button>
           )}
         </div>
+
+
       </div>
     </div>
   );
 }
+
+

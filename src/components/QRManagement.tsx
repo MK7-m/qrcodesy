@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { supabase } from '../lib/supabase';
 import { Database } from '../lib/database.types';
-import { Plus, QrCode, Download, Trash2, Edit2, X, Save } from 'lucide-react';
+import { Plus, Download, Trash2, Edit2, X, Save } from 'lucide-react';
 
 type Restaurant = Database['public']['Tables']['restaurants']['Row'];
 type Table = Database['public']['Tables']['tables']['Row'];

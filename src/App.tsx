@@ -47,8 +47,11 @@ function AuthRoute({ children }: { children: React.ReactNode }) {
 }
 
 function App() {
+  // Use base path only in production (GitHub Pages), not in development
+  const basename = import.meta.env.PROD ? '/qrcodesy' : '/';
+  
   return (
-    <BrowserRouter>
+    <BrowserRouter basename={basename}>
       <AuthProvider>
         <Routes>
           <Route
@@ -67,6 +70,7 @@ function App() {
               </ProtectedRoute>
             }
           />
+          <Route path="/admin/*" element={<Navigate to="/dashboard" replace />} />
           <Route path="/menu/:restaurantId" element={<CustomerMenuPage />} />
           <Route path="/" element={<Navigate to="/auth" replace />} />
         </Routes>
@@ -76,3 +80,6 @@ function App() {
 }
 
 export default App;
+
+
+

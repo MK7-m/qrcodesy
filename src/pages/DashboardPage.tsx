@@ -1,41 +1,66 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { supabase } from '../lib/supabase';
 import { Database } from '../lib/database.types';
 import { LogOut, Menu as MenuIcon, ShoppingBag, QrCode, Settings, Plus } from 'lucide-react';
-import { MenuManagement } from '../components/MenuManagement';
-import { QRManagement } from '../components/QRManagement';
-import { OrderManagement } from '../components/OrderManagement';
-import { SettingsManagement } from '../components/SettingsManagement';
+import { Button } from '../components/ui/Button';
+import { CardSkeleton } from '../components/ui/LoadingSkeleton';
+import { ErrorMessage } from '../components/ui/ErrorMessage';
+import { getRestaurantById } from '../services/restaurants';
+import type { Restaurant as RestaurantType } from '../types/restaurant';
+import { computeRestaurantStatus } from '../utils/openingHours';
+import { MenuTab } from '../features/dashboard/MenuTab';
+import { OrdersTab } from '../features/dashboard/OrdersTab';
+import { QRTab } from '../features/dashboard/QRTab';
+import { SettingsTab } from '../features/dashboard/SettingsTab';
 
 type Restaurant = Database['public']['Tables']['restaurants']['Row'];
 
 export function DashboardPage() {
   const { user, signOut } = useAuth();
   const [restaurant, setRestaurant] = useState<Restaurant | null>(null);
+  const [restaurantData, setRestaurantData] = useState<RestaurantType | null>(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<'menu' | 'orders' | 'qr' | 'settings'>('menu');
+
+  const loadRestaurant = useCallback(async () => {
+    if (!user) return;
+
+    setLoading(true);
+    setError(null);
+
+    try {
+      const { data, error: fetchError } = await supabase
+        .from('restaurants')
+        .select('*')
+        .eq('owner_id', user.id)
+        .maybeSingle();
+
+      if (fetchError) {
+        console.error('Error loading restaurant:', fetchError);
+        setError('تعذر تحميل بيانات المطعم');
+        setLoading(false);
+        return;
+      }
+
+      if (data) {
+        setRestaurant(data);
+        // Load full restaurant data with normalized fields
+        const fullData = await getRestaurantById(data.id);
+        setRestaurantData(fullData);
+      }
+    } catch (err) {
+      console.error('Error:', err);
+      setError('حدث خطأ غير متوقع');
+    } finally {
+      setLoading(false);
+    }
+  }, [user]);
 
   useEffect(() => {
     loadRestaurant();
-  }, [user]);
-
-  const loadRestaurant = async () => {
-    if (!user) return;
-
-    const { data, error } = await supabase
-      .from('restaurants')
-      .select('*')
-      .eq('owner_id', user.id)
-      .maybeSingle();
-
-    if (error) {
-      console.error('Error loading restaurant:', error);
-    }
-
-    setRestaurant(data);
-    setLoading(false);
-  };
+  }, [loadRestaurant]);
 
   const createRestaurant = async (name: string) => {
     if (!user) return;
@@ -48,6 +73,7 @@ export function DashboardPage() {
         plan: 'a',
         delivery_fee: 0,
         is_active: true,
+        opening_hours: [],
       })
       .select()
       .single();
@@ -59,14 +85,26 @@ export function DashboardPage() {
     }
 
     setRestaurant(data);
+    const fullData = await getRestaurantById(data.id);
+    setRestaurantData(fullData);
   };
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-slate-50 flex items-center justify-center">
-        <div className="text-center">
-          <div className="w-16 h-16 border-4 border-orange-500 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
-          <p className="text-slate-600">جارٍ التحميل...</p>
+      <div className="min-h-screen bg-slate-100" dir="rtl">
+        <div className="max-w-6xl mx-auto px-4 py-6 space-y-4">
+          <CardSkeleton />
+          <CardSkeleton />
+        </div>
+      </div>
+    );
+  }
+
+  if (error && !restaurant) {
+    return (
+      <div className="min-h-screen bg-slate-100 flex items-center justify-center p-4" dir="rtl">
+        <div className="max-w-md w-full">
+          <ErrorMessage message={error} onRetry={loadRestaurant} />
         </div>
       </div>
     );
@@ -76,38 +114,60 @@ export function DashboardPage() {
     return <RestaurantSetup onCreateRestaurant={createRestaurant} />;
   }
 
+  const status = restaurantData
+    ? computeRestaurantStatus(restaurantData.opening_hours, restaurantData.status_override)
+    : 'closed';
+
+  const statusConfig = {
+    open: { label: 'مفتوح', color: 'bg-green-100 text-green-700 border-green-200' },
+    closed: { label: 'مغلق', color: 'bg-slate-100 text-slate-700 border-slate-200' },
+    busy: { label: 'مشغول', color: 'bg-amber-100 text-amber-700 border-amber-200' },
+  };
+
+  const planLabels = {
+    a: 'الخطة A',
+    b: 'الخطة B',
+    c: 'الخطة C',
+  };
+
   return (
-    <div className="min-h-screen bg-slate-50">
-      <header className="bg-white border-b border-slate-200 sticky top-0 z-50 shadow-sm">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex items-center justify-between h-16">
-            <div className="flex items-center gap-3">
+    <div className="min-h-screen bg-slate-100" dir="rtl">
+      {/* Header */}
+      <div className="bg-white border-b border-slate-200 shadow-sm sticky top-0 z-50">
+        <div className="max-w-6xl mx-auto px-4 py-4">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-4">
               {restaurant.logo_url ? (
-                <img src={restaurant.logo_url} alt={restaurant.name} className="w-10 h-10 rounded-lg object-cover" />
+                <img src={restaurant.logo_url} alt={restaurant.name} className="w-12 h-12 rounded-xl object-cover shadow-sm" />
               ) : (
-                <div className="w-10 h-10 bg-gradient-to-br from-orange-500 to-orange-600 rounded-lg flex items-center justify-center">
+                <div className="w-12 h-12 bg-gradient-to-br from-orange-500 to-orange-600 rounded-xl flex items-center justify-center shadow-sm">
                   <MenuIcon className="w-6 h-6 text-white" />
                 </div>
               )}
               <div>
-                <h1 className="text-xl font-bold text-slate-900">{restaurant.name}</h1>
-                <p className="text-xs text-slate-500">الخطة {restaurant.plan.toUpperCase()}</p>
+                <h1 className="text-2xl font-bold text-slate-900">{restaurant.name}</h1>
+                <div className="flex items-center gap-2 mt-1">
+                  <span className="px-2 py-0.5 text-xs font-semibold bg-orange-100 text-orange-700 rounded-lg">
+                    {planLabels[restaurant.plan]}
+                  </span>
+                  <span className={`px-2 py-0.5 text-xs font-semibold rounded-lg border ${statusConfig[status].color}`}>
+                    {statusConfig[status].label}
+                  </span>
+                </div>
               </div>
             </div>
-            <button
-              onClick={() => signOut()}
-              className="flex items-center gap-2 px-4 py-2 text-sm text-slate-700 hover:text-slate-900 hover:bg-slate-100 rounded-lg transition-colors"
-            >
+            <Button onClick={() => signOut()} variant="ghost" size="sm">
               <LogOut className="w-4 h-4" />
               تسجيل الخروج
-            </button>
+            </Button>
           </div>
         </div>
-      </header>
+      </div>
 
-      <nav className="bg-white border-b border-slate-200">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex gap-1 overflow-x-auto">
+      {/* Tabs */}
+      <div className="bg-white border-b border-slate-200">
+        <div className="max-w-6xl mx-auto px-4">
+          <div className="flex gap-1 overflow-x-auto scrollbar-hide">
             <TabButton
               active={activeTab === 'menu'}
               onClick={() => setActiveTab('menu')}
@@ -134,13 +194,16 @@ export function DashboardPage() {
             />
           </div>
         </div>
-      </nav>
+      </div>
 
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        {activeTab === 'menu' && <MenuTab restaurant={restaurant} />}
-        {activeTab === 'orders' && <OrdersTab restaurant={restaurant} />}
-        {activeTab === 'qr' && <QRTab restaurant={restaurant} />}
-        {activeTab === 'settings' && <SettingsTab restaurant={restaurant} onUpdate={loadRestaurant} />}
+      {/* Content */}
+      <main className="max-w-6xl mx-auto px-4 py-6">
+        {activeTab === 'menu' && restaurant && <MenuTab restaurant={restaurant} />}
+        {activeTab === 'orders' && restaurant && <OrdersTab restaurant={restaurant} />}
+        {activeTab === 'qr' && restaurant && <QRTab restaurant={restaurant} />}
+        {activeTab === 'settings' && restaurant && restaurantData && (
+          <SettingsTab restaurant={restaurant} restaurantData={restaurantData} onUpdate={loadRestaurant} />
+        )}
       </main>
     </div>
   );
@@ -150,11 +213,12 @@ function TabButton({ active, onClick, icon, label }: { active: boolean; onClick:
   return (
     <button
       onClick={onClick}
-      className={`flex items-center gap-2 px-4 py-3 font-medium text-sm transition-colors border-b-2 whitespace-nowrap ${
+      className={`flex items-center gap-2 px-6 py-3 font-medium text-sm transition-all duration-200 border-b-2 whitespace-nowrap ${
         active
-          ? 'border-orange-500 text-orange-600'
-          : 'border-transparent text-slate-600 hover:text-slate-900 hover:border-slate-300'
+          ? 'border-orange-500 text-orange-600 bg-orange-50'
+          : 'border-transparent text-slate-600 hover:text-slate-900 hover:bg-slate-50'
       }`}
+      dir="rtl"
     >
       {icon}
       {label}
@@ -176,7 +240,7 @@ function RestaurantSetup({ onCreateRestaurant }: { onCreateRestaurant: (name: st
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 flex items-center justify-center p-4">
+    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 flex items-center justify-center p-4" dir="rtl">
       <div className="w-full max-w-lg">
         <div className="bg-white rounded-2xl shadow-2xl p-8">
           <div className="text-center mb-8">
@@ -198,37 +262,18 @@ function RestaurantSetup({ onCreateRestaurant }: { onCreateRestaurant: (name: st
                 value={name}
                 onChange={(e) => setName(e.target.value)}
                 required
-                className="w-full px-4 py-3 rounded-lg border border-slate-300 focus:ring-2 focus:ring-orange-500 focus:border-orange-500 transition-colors"
+                className="w-full px-4 py-3 rounded-xl border border-slate-300 focus:ring-2 focus:ring-orange-500 focus:border-orange-500 transition-colors"
                 placeholder="مطعم الشام"
+                dir="rtl"
               />
             </div>
 
-            <button
-              type="submit"
-              disabled={loading || !name.trim()}
-              className="w-full bg-orange-500 hover:bg-orange-600 disabled:bg-orange-300 text-white font-semibold py-3 rounded-lg transition-colors shadow-lg hover:shadow-xl"
-            >
-              {loading ? 'جارٍ الإنشاء...' : 'إنشاء المطعم'}
-            </button>
+            <Button type="submit" loading={loading} disabled={!name.trim()} fullWidth variant="primary" size="lg">
+              إنشاء المطعم
+            </Button>
           </form>
         </div>
       </div>
     </div>
   );
-}
-
-function MenuTab({ restaurant }: { restaurant: Restaurant }) {
-  return <MenuManagement restaurant={restaurant} />;
-}
-
-function OrdersTab({ restaurant }: { restaurant: Restaurant }) {
-  return <OrderManagement restaurant={restaurant} />;
-}
-
-function QRTab({ restaurant }: { restaurant: Restaurant }) {
-  return <QRManagement restaurant={restaurant} />;
-}
-
-function SettingsTab({ restaurant, onUpdate }: { restaurant: Restaurant; onUpdate: () => void }) {
-  return <SettingsManagement restaurant={restaurant} onUpdate={onUpdate} />;
 }
